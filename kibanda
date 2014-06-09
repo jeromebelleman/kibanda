@@ -65,7 +65,7 @@ def remove(args):
                            (args.hostname, args.dashboard))
     printerr(resp)
 
-def dashboards(args):
+def listdashboards(args):
     '''
     List dashboards
     '''
@@ -123,8 +123,8 @@ def main():
 
     subs = parser.add_subparsers()
 
-    listparser = subs.add_parser('dashboards', help="list dashboards")
-    listparser.set_defaults(func=dashboards)
+    listparser = subs.add_parser('list', help="list dashboards")
+    listparser.set_defaults(func=listdashboards)
 
     removeparser = subs.add_parser('remove', help="remove dashboard")
     removeparser.add_argument('dashboard')
