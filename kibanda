@@ -1,0 +1,125 @@
+#! /usr/bin/env python
+
+'''
+Edit Kibana dashboards
+'''
+
+import sys, os
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+import json
+import requests
+import tempfile
+import subprocess
+import pyinotify
+
+DIR = os.path.expanduser('~/.kibanda')
+
+class EventHandler(pyinotify.ProcessEvent):
+    '''
+    Notice temporary file changes
+    '''
+
+    def __init__(self, hostname, dashboard, name, doc):
+        '''
+        Init variables
+        '''
+        super(EventHandler, self).__init__()
+
+        self.hostname = hostname
+        self.dashboard = dashboard
+        self.name = name
+        self.doc = doc
+
+    def process_IN_MODIFY(self, event): # pylint: disable=invalid-name
+        '''
+        Handle temporary file changes
+        '''
+
+        if event.pathname == self.name:
+            # Load dashboard edited by Vim
+            fhl = open(self.name)
+            self.doc['dashboard'] = fhl.read()
+
+            # Upload dashboard
+            resp = requests.put('http://%s:9200/kibana-int/dashboard/%s' % \
+                                (self.hostname, self.dashboard),
+                                json.dumps(self.doc))
+            if resp.status_code >= 400:
+                print >> sys.stderr, resp.text
+
+            fhl.close()
+
+def dashboards(args):
+    '''
+    List dashboards
+    '''
+
+    resp = requests.get('http://%s:9200/kibana-int/dashboard/_search' % \
+        args.hostname)
+
+    if resp.status_code >= 400:
+        print >> sys.stderr, resp.text
+
+    for dashboard in resp.json()['hits']['hits']:
+        print dashboard['_source']['title']
+
+def edit(args):
+    '''
+    Edit dashboard
+    '''
+
+    # Download dashboard
+    resp = requests.get('http://%s:9200/kibana-int/dashboard/%s' % \
+        (args.hostname, args.dashboard))
+
+    if resp.status_code >= 400:
+        print >> sys.stderr, resp.text
+
+    # Write dashboard to temporary file
+    dashboard = json.loads(resp.json()['_source']['dashboard'])
+    tmp = tempfile.NamedTemporaryFile(dir=DIR)
+    tmp.write(json.dumps(dashboard, indent=4))
+    tmp.flush()
+
+    # Watch temporary file
+    watchmanager = pyinotify.WatchManager()
+    notifier = pyinotify.ThreadedNotifier(watchmanager,
+                                          EventHandler(args.hostname,
+                                                       args.dashboard, tmp.name,
+                                                       resp.json()['_source']))
+    notifier.start()
+    wdd = watchmanager.add_watch(DIR, pyinotify.IN_MODIFY)
+
+    # Open dashboard in Vim
+    subprocess.call(['vim', '-S', DIR + '/vimrc', tmp.name])
+
+    # Clean up
+    watchmanager.rm_watch(wdd.values())
+    notifier.stop()
+    tmp.close()
+
+def main():
+    '''
+    Main function
+    '''
+
+    # Arguments
+    parser = ArgumentParser(description="Edit Kibana dashboards",
+                            formatter_class=ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-n', '--hostname', help="Elasticsearch host name",
+                        default='localhost.localdomain')
+
+    subs = parser.add_subparsers()
+
+    listparser = subs.add_parser('dashboards', help="list dashboards")
+    listparser.set_defaults(func=dashboards)
+
+    editparser = subs.add_parser('edit', help="edit dashboard")
+    editparser.add_argument('dashboard')
+    editparser.set_defaults(func=edit)
+
+    args = parser.parse_args()
+    args.func(args)
+
+if __name__ == '__main__':
+    sys.exit(main())
