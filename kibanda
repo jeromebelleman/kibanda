@@ -65,6 +65,28 @@ def remove(args):
                            (args.hostname, args.dashboard))
     printerr(resp)
 
+def backup(args):
+    '''
+    Backup all dashboards
+    '''
+
+    resp = requests.get('http://%s:9200/kibana-int/dashboard/_search' % \
+        args.hostname)
+    printerr(resp)
+
+    for dashboard in resp.json()['hits']['hits']:
+        fhl = open(DIR + '/backups/' + dashboard['_source']['title'], 'w')
+        dashboard['_source']['dashboard'] = \
+            json.loads(dashboard['_source']['dashboard'])
+        json.dump(dashboard['_source'], fhl, indent=4, sort_keys=True)
+        fhl.close()
+    subprocess.call(['git', '--git-dir', DIR + '/backups/.git',
+                     '--work-tree', DIR + '/backups', 'add', '-A'])
+    subprocess.call(['git', '--git-dir', DIR + '/backups/.git',
+                     '--work-tree', DIR + '/backups',
+                     'commit', '-m', "Back up all dashboards"])
+
+
 def listdashboards(args):
     '''
     List dashboards
@@ -129,6 +151,9 @@ def main():
     removeparser = subs.add_parser('remove', help="remove dashboard")
     removeparser.add_argument('dashboard')
     removeparser.set_defaults(func=remove)
+
+    backupparser = subs.add_parser('backup', help="backup all dashboards")
+    backupparser.set_defaults(func=backup)
 
     editparser = subs.add_parser('edit', help="edit dashboard")
     editparser.add_argument('dashboard')
