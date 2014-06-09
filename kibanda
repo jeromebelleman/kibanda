@@ -11,8 +11,12 @@ import requests
 import tempfile
 import subprocess
 import pyinotify
+import yaml
+
+import pprint
 
 DIR = os.path.expanduser('~/.kibanda')
+SEARCH = 'http://%s:9200/kibana-int/dashboard/_search?size=%d'
 
 def printerr(resp):
     '''
@@ -56,7 +60,7 @@ class EventHandler(pyinotify.ProcessEvent):
 
             fhl.close()
 
-def remove(args):
+def remove(args, cfg):
     '''
     Remove dashboard
     '''
@@ -65,41 +69,47 @@ def remove(args):
                            (args.hostname, args.dashboard))
     printerr(resp)
 
-def backup(args):
+def backup(args, cfg):
     '''
     Backup all dashboards
     '''
 
-    resp = requests.get('http://%s:9200/kibana-int/dashboard/_search' % \
-        args.hostname)
+    # Retrieve dashboards
+    resp = requests.get(SEARCH % (args.hostname, int(cfg['resultsize'])))
     printerr(resp)
 
+    # Write dashboards to file
     for dashboard in resp.json()['hits']['hits']:
         fhl = open(DIR + '/backups/' + dashboard['_source']['title'], 'w')
+        # Make dashboard itself more diffable
         dashboard['_source']['dashboard'] = \
             json.loads(dashboard['_source']['dashboard'])
         json.dump(dashboard['_source'], fhl, indent=4, sort_keys=True)
         fhl.close()
+
+    # Run git
+    if args.quiet:
+        out = open(os.devnull, 'w')
+    else:
+        out = sys.stdout
     subprocess.call(['git', '--git-dir', DIR + '/backups/.git',
-                     '--work-tree', DIR + '/backups', 'add', '-A'])
+                     '--work-tree', DIR + '/backups', 'add', '-A'], stdout=out)
     subprocess.call(['git', '--git-dir', DIR + '/backups/.git',
                      '--work-tree', DIR + '/backups',
-                     'commit', '-m', "Back up all dashboards"])
+                     'commit', '-m', "Back up all dashboards"], stdout=out)
 
-
-def listdashboards(args):
+def listdashboards(args, cfg):
     '''
     List dashboards
     '''
 
-    resp = requests.get('http://%s:9200/kibana-int/dashboard/_search' % \
-        args.hostname)
+    resp = requests.get(SEARCH % (args.hostname, int(cfg['resultsize'])))
     printerr(resp)
 
     for dashboard in resp.json()['hits']['hits']:
         print dashboard['_source']['title']
 
-def edit(args):
+def edit(args, cfg):
     '''
     Edit dashboard
     '''
@@ -137,11 +147,14 @@ def main():
     Main function
     '''
 
+    with open(DIR + '/cfg.yaml') as fhl:
+        cfg = yaml.load(fhl, Loader=yaml.BaseLoader)
+
     # Arguments
     parser = ArgumentParser(description="Edit Kibana dashboards",
                             formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument('-n', '--hostname', help="Elasticsearch host name",
-                        default='localhost.localdomain')
+                        default=cfg['hostname'])
 
     subs = parser.add_subparsers()
 
@@ -153,6 +166,8 @@ def main():
     removeparser.set_defaults(func=remove)
 
     backupparser = subs.add_parser('backup', help="backup all dashboards")
+    backupparser.add_argument('-q', '--quiet', action='store_true',
+                              help="be quiet")
     backupparser.set_defaults(func=backup)
 
     editparser = subs.add_parser('edit', help="edit dashboard")
@@ -160,7 +175,7 @@ def main():
     editparser.set_defaults(func=edit)
 
     args = parser.parse_args()
-    args.func(args)
+    args.func(args, cfg)
 
 if __name__ == '__main__':
     sys.exit(main())
