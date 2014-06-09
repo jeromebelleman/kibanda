@@ -14,6 +14,14 @@ import pyinotify
 
 DIR = os.path.expanduser('~/.kibanda')
 
+def printerr(resp):
+    '''
+    Print error message if any
+    '''
+
+    if resp.status_code >= 400:
+        print >> sys.stderr, resp.text
+
 class EventHandler(pyinotify.ProcessEvent):
     '''
     Notice temporary file changes
@@ -44,10 +52,18 @@ class EventHandler(pyinotify.ProcessEvent):
             resp = requests.put('http://%s:9200/kibana-int/dashboard/%s' % \
                                 (self.hostname, self.dashboard),
                                 json.dumps(self.doc))
-            if resp.status_code >= 400:
-                print >> sys.stderr, resp.text
+            printerr(resp)
 
             fhl.close()
+
+def remove(args):
+    '''
+    Remove dashboard
+    '''
+
+    resp = requests.delete('http://%s:9200/kibana-int/dashboard/%s' % \
+                           (args.hostname, args.dashboard))
+    printerr(resp)
 
 def dashboards(args):
     '''
@@ -56,9 +72,7 @@ def dashboards(args):
 
     resp = requests.get('http://%s:9200/kibana-int/dashboard/_search' % \
         args.hostname)
-
-    if resp.status_code >= 400:
-        print >> sys.stderr, resp.text
+    printerr(resp)
 
     for dashboard in resp.json()['hits']['hits']:
         print dashboard['_source']['title']
@@ -71,9 +85,7 @@ def edit(args):
     # Download dashboard
     resp = requests.get('http://%s:9200/kibana-int/dashboard/%s' % \
         (args.hostname, args.dashboard))
-
-    if resp.status_code >= 400:
-        print >> sys.stderr, resp.text
+    printerr(resp)
 
     # Write dashboard to temporary file
     dashboard = json.loads(resp.json()['_source']['dashboard'])
@@ -113,6 +125,10 @@ def main():
 
     listparser = subs.add_parser('dashboards', help="list dashboards")
     listparser.set_defaults(func=dashboards)
+
+    removeparser = subs.add_parser('remove', help="remove dashboard")
+    removeparser.add_argument('dashboard')
+    removeparser.set_defaults(func=remove)
 
     editparser = subs.add_parser('edit', help="edit dashboard")
     editparser.add_argument('dashboard')
