@@ -4,16 +4,16 @@
 Edit Kibana dashboards
 '''
 
-import sys, os
+import sys
+import os
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import json
-import requests
 import tempfile
 import subprocess
-import pyinotify
-import yaml
 
-import pprint
+import pyinotify
+import requests
+import yaml
 
 DIR = os.path.expanduser('~/.kibanda')
 SEARCH = 'http://%s:9200/kibana-int/dashboard/_search?size=%d'
@@ -65,8 +65,9 @@ def remove(args, cfg):
     Remove dashboard
     '''
 
+    hostname = args.hostname if args.hostname else cfg['hostname']
     resp = requests.delete('http://%s:9200/kibana-int/dashboard/%s' % \
-                           (args.hostname, args.dashboard))
+                           (hostname, args.dashboard))
     printerr(resp)
 
 def backup(args, cfg):
@@ -109,7 +110,7 @@ def listdashboards(args, cfg):
     for dashboard in resp.json()['hits']['hits']:
         print dashboard['_source']['title']
 
-def edit(args, cfg):
+def edit(args, _):
     '''
     Edit dashboard
     '''
@@ -147,14 +148,10 @@ def main():
     Main function
     '''
 
-    with open(DIR + '/cfg.yaml') as fhl:
-        cfg = yaml.load(fhl, Loader=yaml.BaseLoader)
-
     # Arguments
     parser = ArgumentParser(description="Edit Kibana dashboards",
                             formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-n', '--hostname', help="Elasticsearch host name",
-                        default=cfg['hostname'])
+    parser.add_argument('-n', '--hostname', help="Elasticsearch host name")
 
     subs = parser.add_subparsers()
 
@@ -175,6 +172,14 @@ def main():
     editparser.set_defaults(func=edit)
 
     args = parser.parse_args()
+
+    try:
+        with open(DIR + '/cfg.yaml') as fhl:
+            cfg = yaml.load(fhl, Loader=yaml.BaseLoader)
+    except IOError, exc:
+        print >> sys.stderr, exc
+        return 1
+
     args.func(args, cfg)
 
 if __name__ == '__main__':
