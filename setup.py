@@ -15,5 +15,5 @@ setup(
     description="Manage Kibana dashboards",
     long_description="List, edit, back up Kibana dashboards.",
     scripts=['kibanda'],
-    data_files=[],
+    data_files=[('share/man/man1', ['kibanda.1'])],
 )
